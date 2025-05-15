@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
 audio_pipeline.py
 Core audio processing pipeline for the Voice Extractor.
