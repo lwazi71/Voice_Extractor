@@ -17,6 +17,7 @@ import time
 import csv
 import subprocess
 import os
+import re # Import regex for more robust parsing
 
 os.environ['SPEECHBRAIN_FETCH_LOCAL_STRATEGY'] = 'copy'
 
@@ -216,7 +217,7 @@ def detect_overlapped_regions(
                 log.info("Using 'speech' label from 'pyannote/overlapped-speech-detection' as overlap.")
                 overlap_timeline.update(osd_annotation.label_timeline("speech"))
                 found_overlap_via_other_means = True
-            
+
             if not found_overlap_via_other_means:
                 for label in labels_from_osd:
                     if osd_model_name.startswith("pyannote/segmentation"):
@@ -226,14 +227,14 @@ def detect_overlapped_regions(
                                 overlap_timeline.update(osd_annotation.label_timeline(label))
                                 found_overlap_via_other_means = True
                                 log.info(f"Inferred overlap from speaker count label '{label}'.")
-                                break 
+                                break
                         except ValueError: pass
                     elif "overlap" in label.lower():
                          overlap_timeline.update(osd_annotation.label_timeline(label))
                          found_overlap_via_other_means = True
                          log.info(f"Using label '{label}' as overlap.")
                          break
-            
+
             if not overlap_timeline and not found_overlap_via_other_means and labels_from_osd:
                  log.warning(f"OSD model '{osd_model_name}' did not produce clear 'overlap' or speaker count >= 2 labels. Labels: {labels_from_osd}. Fallback: union of all segments from OSD.")
                  for label in labels_from_osd:
@@ -291,7 +292,7 @@ def detect_overlapped_regions(
                     if osd_model_name == "pyannote/overlapped-speech-detection" and "speech" in labels_from_osd_cpu:
                          ov_tl_cpu.update(osd_ann_cpu.label_timeline("speech"))
                          found_overlap_cpu = True
-                    
+
                     if not found_overlap_cpu:
                         for label in labels_from_osd_cpu:
                             if osd_model_name.startswith("pyannote/segmentation"):
@@ -304,7 +305,7 @@ def detect_overlapped_regions(
                             elif "overlap" in label.lower():
                                 ov_tl_cpu.update(osd_ann_cpu.label_timeline(label)); found_overlap_cpu = True
                                 break
-                    
+
                     if not ov_tl_cpu and not found_overlap_cpu and labels_from_osd_cpu:
                          for label in labels_from_osd_cpu:
                              ov_tl_cpu.update(osd_ann_cpu.label_timeline(label))
@@ -510,21 +511,22 @@ def get_target_solo_timeline(
         log.info(f"No speech segments for target '{identified_target_label}' in diarization.")
         return Timeline()
 
-    # Use extrude to remove overlapping regions
     final_solo_timeline = target_speaker_timeline.support().extrude(overlap_timeline.support())
     return final_solo_timeline
 
 def slice_and_verify_target_solo_segments(
     diarization_annotation: Annotation, identified_target_label: str, overlap_timeline: Timeline,
     source_audio_file: Path, processed_reference_file: Path, target_name: str,
-    output_segments_base_dir: Path, tmp_dir: Path, verification_threshold: float,
+    output_segments_base_dir: Path,
+    tmp_dir: Path, verification_threshold: float,
     min_segment_duration: float, max_merge_gap_val: float,
     output_sample_rate: int = 48000, output_channels: int = 1
-) -> list[Path]:
+) -> tuple[list[Path], list[Path]]:
     log.info(f"Refining and processing SOLO segments for '{target_name}' (label: {identified_target_label}).")
     target_solo_speech_timeline = get_target_solo_timeline(diarization_annotation, identified_target_label, overlap_timeline)
     if not target_solo_speech_timeline:
-        log.warning(f"No solo speech for '{target_name}' after excluding overlaps. Skipping extraction."); return []
+        log.warning(f"No solo speech for '{target_name}' after excluding overlaps. Skipping extraction.")
+        return [], []
     log.info(f"Initial solo timeline for '{target_name}' (post-overlap subtraction) has {len(list(target_solo_speech_timeline))} sub-segments, duration: {format_duration(target_solo_speech_timeline.duration())}.")
 
     merged_target_solo_segments = merge_nearby_segments(list(target_solo_speech_timeline), max_merge_gap_val)
@@ -532,10 +534,14 @@ def slice_and_verify_target_solo_segments(
     duration_filtered_target_solo_segments = filter_segments_by_duration(merged_target_solo_segments, min_segment_duration)
     log.info(f"After duration filtering (>= {min_segment_duration}s): {len(duration_filtered_target_solo_segments)} final solo segments.")
     if not duration_filtered_target_solo_segments:
-        log.warning(f"No solo segments for '{target_name}' after merging/duration filtering. Skipping."); return []
+        log.warning(f"No solo segments for '{target_name}' after merging/duration filtering. Skipping.")
+        return [], []
 
     solo_segments_dir = output_segments_base_dir / f"{safe_filename(target_name)}_solo_verified"
+    rejected_segments_dir = output_segments_base_dir / f"{safe_filename(target_name)}_solo_rejected_for_review"
     ensure_dir_exists(solo_segments_dir)
+    ensure_dir_exists(rejected_segments_dir)
+
     tmp_extracted_segments_dir = tmp_dir / f"__tmp_segments_solo_{safe_filename(target_name)}"
     ensure_dir_exists(tmp_extracted_segments_dir); [f.unlink() for f in tmp_extracted_segments_dir.glob("*.wav") if f.is_file()]
 
@@ -547,7 +553,8 @@ def slice_and_verify_target_solo_segments(
         task_slice = pb_slice.add_task("Slicing solo segments...", total=len(duration_filtered_target_solo_segments))
         for i, seg_obj in enumerate(duration_filtered_target_solo_segments):
             s_str, e_str = f"{seg_obj.start:.3f}".replace('.','p'), f"{seg_obj.end:.3f}".replace('.','p')
-            tmp_seg_path = tmp_extracted_segments_dir / f"solo_seg_{i:04d}_{s_str}s_to_{e_str}s.wav"
+            base_seg_name = f"solo_seg_{i:04d}_{s_str}s_to_{e_str}s"
+            tmp_seg_path = tmp_extracted_segments_dir / f"{base_seg_name}.wav"
             try:
                 ff_slice(source_audio_file, tmp_seg_path, seg_obj.start, seg_obj.end, target_sr=16000, target_ac=1)
                 if tmp_seg_path.exists() and tmp_seg_path.stat().st_size > 0: all_sliced_solo_paths.append(tmp_seg_path)
@@ -558,7 +565,7 @@ def slice_and_verify_target_solo_segments(
     if not all_sliced_solo_paths:
         log.warning("No solo segments successfully sliced. Skipping verification.");
         if sb_model and HAVE_SPEECHBRAIN and DEVICE.type == "cuda": torch.cuda.empty_cache();
-        return []
+        return [], []
 
     log.info(f"Verifying identity in {len(all_sliced_solo_paths)} sliced solo segments...")
     with Progress(*Progress.get_default_columns(), console=console, transient=True) as pb_verify:
@@ -573,6 +580,7 @@ def slice_and_verify_target_solo_segments(
     num_accepted, num_rejected = plot_verification_scores({Path(k).name: v for k,v in segment_verification_scores_map.items()}, verification_threshold, output_segments_base_dir, target_name, plot_title_prefix=f"{safe_filename(target_name)}_SOLO_Verification_Scores")
 
     final_verified_solo_paths = []
+    final_rejected_solo_paths = []
     log.info(f"Finalizing {num_accepted} verified solo segments (thresh: {verification_threshold:.2f}). Rejected: {num_rejected}.")
     with Progress(*Progress.get_default_columns(), console=console, transient=True) as pb_finalize:
         task_finalize = pb_finalize.add_task("Finalizing solo segments...", total=len(all_sliced_solo_paths))
@@ -588,17 +596,24 @@ def slice_and_verify_target_solo_segments(
                         if output_channels == 1 and data.ndim > 1: data = to_mono(data)
                         sf.write(str(final_seg_path), data, output_sample_rate, subtype='PCM_16')
                         if tmp_path.exists(): tmp_path.unlink()
-                    except Exception as e: log.error(f"Failed to resample/finalize {tmp_path.name}: {e}. Moving 16kHz version."); shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
+                    except Exception as e: log.error(f"Failed to resample/finalize accepted {tmp_path.name}: {e}. Moving 16kHz version."); shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
                 else: shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
                 final_verified_solo_paths.append(final_seg_path)
-            elif tmp_path.exists(): tmp_path.unlink(missing_ok=True)
+            else:
+                if tmp_path.exists():
+                    rejected_filename = f"{tmp_path.stem}_score_{score:.3f}.wav"
+                    rejected_seg_path = rejected_segments_dir / rejected_filename
+                    shutil.move(str(tmp_path), str(rejected_seg_path))
+                    final_rejected_solo_paths.append(rejected_seg_path)
             pb_finalize.update(task_finalize, advance=1)
 
     if tmp_extracted_segments_dir.exists():
         try: shutil.rmtree(tmp_extracted_segments_dir)
         except OSError as e: log.warning(f"Could not remove tmp solo segments dir {tmp_extracted_segments_dir}: {e}")
     log.info(f"[green]✓ Extracted and verified {len(final_verified_solo_paths)} solo segments for '{target_name}'.[/]")
-    return final_verified_solo_paths
+    if num_rejected > 0:
+        log.info(f"  Rejected {num_rejected} segments saved for review in: {rejected_segments_dir}")
+    return final_verified_solo_paths, final_rejected_solo_paths
 
 def transcribe_segments(
     segment_paths: list[Path], output_transcripts_dir: Path, target_name: str,
@@ -618,12 +633,17 @@ def transcribe_segments(
     file_prefix = f"{safe_filename(target_name)}_{safe_filename(segment_type_tag)}"
     csv_path, txt_path = output_transcripts_dir/f"{file_prefix}_trans.csv", output_transcripts_dir/f"{file_prefix}_trans.txt"
 
+    # Regex to find the time part like "123p456s_to_789p012s"
+    time_pattern = re.compile(r"(\d+p\d+s_to_\d+p\d+)s")
+
     def get_sort_key_time(p: Path):
         try:
-            parts = p.stem.split('_'); time_str = ""
-            for part in reversed(parts):
-                if 's_to_' in part and part.count('p') >= 1: time_str = part.split('s_to_')[0]; break
-            return float(time_str.replace('p', '.')) if time_str else 0.0
+            match = time_pattern.search(p.stem)
+            if match:
+                time_part_str = match.group(1) # The part like "123p456s_to_789p012"
+                start_time_str = time_part_str.split('s_to_')[0]
+                return float(start_time_str.replace('p', '.'))
+            return 0.0 # Fallback if pattern not found
         except: return 0.0
     sorted_segment_paths = sorted(segment_paths, key=get_sort_key_time)
 
@@ -633,18 +653,22 @@ def transcribe_segments(
             if not wav_file.exists() or wav_file.stat().st_size == 0: log.warning(f"Skipping missing/empty: {wav_file.name}"); pb.update(task, advance=1); continue
             text = "[TRANSCRIPTION ERROR]"; s_time, e_time = 0.0, 0.0
             try:
-                name_parts = wav_file.stem.split('_')
-                for part in name_parts:
-                    if 's_to_' in part and part.count('p') >= 1:
-                        s_str, e_str = part.split('s_to_')
-                        s_time = float(s_str.replace('p','.'))
-                        e_time = float(e_str.removesuffix('s').replace('p','.'))
-                        break
+                match = time_pattern.search(wav_file.stem)
+                if match:
+                    time_part_str = match.group(1) # The part like "123p456s_to_789p012"
+                    s_time_str_part, e_time_str_part_full = time_part_str.split('s_to_')
+                    s_time = float(s_time_str_part.replace('p','.'))
+                    e_time = float(e_time_str_part_full.replace('p','.')) # .removesuffix('s') already handled by regex group
+                else:
+                    log.warning(f"Could not parse s_time/e_time from filename '{wav_file.name}' for transcript metadata. Will be 0.0.")
+                
                 opts = {"fp16": DEVICE.type=="cuda"}
                 if language and language.lower() != "auto": opts["language"] = language
                 result = model.transcribe(str(wav_file), **opts)
                 text = result["text"].strip()
-            except Exception as e: log.error(f"Error transcribing {wav_file.name}: {e}")
+            except Exception as e:
+                log.error(f"Error transcribing {wav_file.name}: {e}")
+                s_time, e_time = 0.0, 0.0 # Reset on error
 
             duration = librosa.get_duration(path=wav_file)
             transcription_data_for_csv.append([f"{s_time:.3f}", f"{e_time:.3f}", f"{duration:.3f}", wav_file.name, text])
@@ -669,12 +693,15 @@ def concatenate_segments(
     if not audio_segment_paths: log.warning(f"No segments to concat for {destination_concatenated_file.name}."); return False
     ensure_dir_exists(tmp_dir_concat); ensure_dir_exists(destination_concatenated_file.parent)
 
+    time_pattern_concat = re.compile(r"(\d+p\d+s)_to_") # Simpler regex for start time for sorting
+
     def get_sort_key_concat(p: Path):
         try:
-            parts = p.stem.split('_'); time_str = ""
-            for part in reversed(parts):
-                if 's_to_' in part and part.count('p') >= 1: time_str = part.split('s_to_')[0]; break
-            return float(time_str.replace('p', '.')) if time_str else 0.0
+            match = time_pattern_concat.search(p.stem)
+            if match:
+                start_time_str = match.group(1) # The part like "123p456s"
+                return float(start_time_str.replace('p', '.').removesuffix('s'))
+            return 0.0 # Fallback if pattern not found
         except: return 0.0
     sorted_audio_paths = sorted(audio_segment_paths, key=get_sort_key_concat)
 
