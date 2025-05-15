@@ -19,6 +19,10 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 - **Dependencies**: PyTorch 2.7.0+, torchaudio, torchvision, librosa
 - **Output**: Verified WAV segments, transcripts (CSV/TXT), spectrograms
 
+## Min Specs:
+
+NVIDIA GPU with 13GB+ VRAM
+
 ## Installation
 
 
