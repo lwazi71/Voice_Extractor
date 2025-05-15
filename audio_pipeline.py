@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 audio_pipeline.py
 Core audio processing pipeline for the Voice Extractor.
@@ -431,7 +434,7 @@ def filter_segments_by_duration(segments_to_filter: list[Segment], min_req_durat
     return [seg for seg in segments_to_filter if seg.duration >= min_req_duration]
 
 def check_voice_activity(audio_path: Path, min_speech_ratio: float = 0.6, vad_threshold: float = 0.5) -> bool:
-    try: y, sr = librosa.load(audio_path, sr=16000, mono=True)
+    try: y, sr = librosa.load(audio_path, sr=16000, mono=True) # VAD expects 16kHz
     except Exception as e: log.debug(f"VAD: Load failed {audio_path.name}: {e}. No voice."); return False
     if len(y) == 0: log.debug(f"VAD: Empty {audio_path.name}. No voice."); return False
     try:
@@ -439,10 +442,12 @@ def check_voice_activity(audio_path: Path, min_speech_ratio: float = 0.6, vad_th
         (get_speech_timestamps, _, _, _, _) = utils; vad_model.to(DEVICE)
     except Exception as e: log.warning(f"VAD: Model load failed: {e}. Skipping VAD for {audio_path.name}, assuming active."); return True
     try:
+        # Ensure audio tensor is on the correct device for VAD model
         audio_tensor = torch.FloatTensor(y).to(DEVICE)
-        speech_timestamps = get_speech_timestamps(audio_tensor, vad_model, sampling_rate=sr, threshold=vad_threshold)
-        speech_duration_sec = sum(d['end'] - d['start'] for d in speech_timestamps) / sr
-        total_duration_sec = len(y) / sr
+        # Silero VAD model expects 16000, 8000 or 48000Hz. Librosa loaded at 16000Hz.
+        speech_timestamps = get_speech_timestamps(audio_tensor, vad_model, sampling_rate=16000, threshold=vad_threshold)
+        speech_duration_sec = sum(d['end'] - d['start'] for d in speech_timestamps) / 16000
+        total_duration_sec = len(y) / 16000
         ratio = speech_duration_sec / total_duration_sec if total_duration_sec > 0 else 0.0
         log.debug(f"VAD for {audio_path.name}: Ratio {ratio:.2f} (Speech: {speech_duration_sec:.2f}s / Total: {total_duration_sec:.2f}s)")
         return ratio >= min_speech_ratio
@@ -473,22 +478,31 @@ def verify_speaker_segment(
 ) -> tuple[float, dict]:
     scores = {"speechbrain": 0.0, "resemblyzer": 0.0, "voice_activity_factor": 0.1}
     seg_name = segment_audio_path.name
+
+    # For SpeechBrain, it will load the audio. We assume it handles resampling if needed.
+    # Reference audio is already processed to 16kHz mono.
     if sb_verification_model and HAVE_SPEECHBRAIN:
         try:
+            # SpeechBrain's verify_files loads audio, so it should handle the current SR of segment_audio_path
+            # (which is now output_sample_rate) and resample to its model's needs (typically 16kHz).
             ref_p, seg_p = reference_audio_path.resolve(strict=True).as_posix(), segment_audio_path.resolve(strict=True).as_posix()
             score_t, _ = sb_verification_model.verify_files(ref_p, seg_p)
             scores["speechbrain"] = score_t.item()
             log.debug(f"SpeechBrain score for {seg_name}: {scores['speechbrain']:.3f}")
         except Exception as e: log.warning(f"SpeechBrain verification failed for {seg_name}: {e}")
+
+    # For Resemblyzer, preprocess_wav handles resampling to 16kHz.
     try:
         rz_encoder = VoiceEncoder(device="cuda" if DEVICE.type == "cuda" else "cpu")
         if not reference_audio_path.exists() or not segment_audio_path.exists(): raise FileNotFoundError("Ref/Seg audio missing for RZ.")
-        ref_wav_rz, seg_wav_rz = resemblyzer_preprocess_wav(reference_audio_path), resemblyzer_preprocess_wav(segment_audio_path)
+        ref_wav_rz = resemblyzer_preprocess_wav(reference_audio_path) # Already 16kHz
+        seg_wav_rz = resemblyzer_preprocess_wav(segment_audio_path)   # Will be resampled to 16kHz if not already
         ref_emb_rz, seg_emb_rz = rz_encoder.embed_utterance(ref_wav_rz), rz_encoder.embed_utterance(seg_wav_rz)
         scores["resemblyzer"] = cos(ref_emb_rz, seg_emb_rz)
         log.debug(f"Resemblyzer score for {seg_name}: {scores['resemblyzer']:.3f}")
     except Exception as e: log.warning(f"Resemblyzer verification failed for {seg_name}: {e}")
 
+    # check_voice_activity already loads audio at 16kHz for VAD.
     scores["voice_activity_factor"] = 1.0 if check_voice_activity(segment_audio_path) else 0.1
 
     final_score = (scores["speechbrain"] * 0.75 + scores["resemblyzer"] * 0.25) * scores["voice_activity_factor"] \
@@ -545,7 +559,7 @@ def slice_and_verify_target_solo_segments(
     sb_model = init_speaker_verification_model()
     all_sliced_solo_paths, segment_verification_scores_map = [], {}
 
-    log.info(f"Slicing {len(duration_filtered_target_solo_segments)} candidate solo segments from '{source_audio_file.name}'...")
+    log.info(f"Slicing {len(duration_filtered_target_solo_segments)} candidate solo segments from '{source_audio_file.name}' at {output_sample_rate}Hz, {output_channels}ch...")
     with Progress(*Progress.get_default_columns(), console=console, transient=True) as pb_slice:
         task_slice = pb_slice.add_task("Slicing solo segments...", total=len(duration_filtered_target_solo_segments))
         for i, seg_obj in enumerate(duration_filtered_target_solo_segments):
@@ -553,7 +567,8 @@ def slice_and_verify_target_solo_segments(
             base_seg_name = f"solo_seg_{i:04d}_{s_str}s_to_{e_str}s"
             tmp_seg_path = tmp_extracted_segments_dir / f"{base_seg_name}.wav"
             try:
-                ff_slice(source_audio_file, tmp_seg_path, seg_obj.start, seg_obj.end, target_sr=16000, target_ac=1)
+                ff_slice(source_audio_file, tmp_seg_path, seg_obj.start, seg_obj.end,
+                         target_sr=output_sample_rate, target_ac=output_channels)
                 if tmp_seg_path.exists() and tmp_seg_path.stat().st_size > 0: all_sliced_solo_paths.append(tmp_seg_path)
                 else: log.warning(f"Failed to create/empty slice: {tmp_seg_path.name}")
             except Exception as e: log.error(f"Failed to slice {tmp_seg_path.name}: {e}. Skipping.")
@@ -581,23 +596,16 @@ def slice_and_verify_target_solo_segments(
     log.info(f"Finalizing {num_accepted} verified solo segments (thresh: {verification_threshold:.2f}). Rejected: {num_rejected}.")
     with Progress(*Progress.get_default_columns(), console=console, transient=True) as pb_finalize:
         task_finalize = pb_finalize.add_task("Finalizing solo segments...", total=len(all_sliced_solo_paths))
-        for tmp_path in all_sliced_solo_paths:
+        for tmp_path in all_sliced_solo_paths: # tmp_path is now at output_sample_rate and output_channels
             score = segment_verification_scores_map.get(str(tmp_path), 0.0)
-            if score >= verification_threshold:
+            if score >= verification_threshold: # If ACCEPTED
                 final_seg_path = solo_segments_dir / tmp_path.name
-                if output_sample_rate != 16000 or output_channels != 1:
-                    try:
-                        data, sr = sf.read(str(tmp_path))
-                        if sr != output_sample_rate:
-                            data = librosa.resample(data.astype(np.float32) / (np.iinfo(data.dtype).max +1 if np.issubdtype(data.dtype,np.integer) else 1.0) if not np.issubdtype(data.dtype,np.floating) else data, orig_sr=sr, target_sr=output_sample_rate)
-                        if output_channels == 1 and data.ndim > 1: data = to_mono(data)
-                        sf.write(str(final_seg_path), data, output_sample_rate, subtype='PCM_16')
-                        if tmp_path.exists(): tmp_path.unlink()
-                    except Exception as e: log.error(f"Failed to resample/finalize accepted {tmp_path.name}: {e}. Moving 16kHz version."); shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
-                else: shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
+                # File is already at correct SR/channels from ff_slice, just move it.
+                shutil.move(str(tmp_path), str(final_seg_path)) if tmp_path.exists() else None
                 final_verified_solo_paths.append(final_seg_path)
-            else:
+            else: # If REJECTED
                 if tmp_path.exists():
+                    # File is already at correct SR/channels.
                     rejected_filename = f"{tmp_path.stem}_score_{score:.3f}.wav"
                     rejected_seg_path = rejected_segments_dir / rejected_filename
                     shutil.move(str(tmp_path), str(rejected_seg_path))
@@ -630,17 +638,16 @@ def transcribe_segments(
     file_prefix = f"{safe_filename(target_name)}_{safe_filename(segment_type_tag)}"
     csv_path, txt_path = output_transcripts_dir/f"{file_prefix}_trans.csv", output_transcripts_dir/f"{file_prefix}_trans.txt"
 
-    # Regex to find the time part like "123p456s_to_789p012s"
     time_pattern = re.compile(r"(\d+p\d+s_to_\d+p\d+)s")
 
     def get_sort_key_time(p: Path):
         try:
             match = time_pattern.search(p.stem)
             if match:
-                time_part_str = match.group(1) # The part like "123p456s_to_789p012"
+                time_part_str = match.group(1)
                 start_time_str = time_part_str.split('s_to_')[0]
                 return float(start_time_str.replace('p', '.'))
-            return 0.0 # Fallback if pattern not found
+            return 0.0
         except: return 0.0
     sorted_segment_paths = sorted(segment_paths, key=get_sort_key_time)
 
@@ -652,20 +659,20 @@ def transcribe_segments(
             try:
                 match = time_pattern.search(wav_file.stem)
                 if match:
-                    time_part_str = match.group(1) # The part like "123p456s_to_789p012"
+                    time_part_str = match.group(1)
                     s_time_str_part, e_time_str_part_full = time_part_str.split('s_to_')
                     s_time = float(s_time_str_part.replace('p','.'))
-                    e_time = float(e_time_str_part_full.replace('p','.')) # .removesuffix('s') already handled by regex group
+                    e_time = float(e_time_str_part_full.replace('p','.'))
                 else:
                     log.warning(f"Could not parse s_time/e_time from filename '{wav_file.name}' for transcript metadata. Will be 0.0.")
-                
+
                 opts = {"fp16": DEVICE.type=="cuda"}
                 if language and language.lower() != "auto": opts["language"] = language
                 result = model.transcribe(str(wav_file), **opts)
                 text = result["text"].strip()
             except Exception as e:
                 log.error(f"Error transcribing {wav_file.name}: {e}")
-                s_time, e_time = 0.0, 0.0 # Reset on error
+                s_time, e_time = 0.0, 0.0
 
             duration = librosa.get_duration(path=wav_file)
             transcription_data_for_csv.append([f"{s_time:.3f}", f"{e_time:.3f}", f"{duration:.3f}", wav_file.name, text])
@@ -690,15 +697,15 @@ def concatenate_segments(
     if not audio_segment_paths: log.warning(f"No segments to concat for {destination_concatenated_file.name}."); return False
     ensure_dir_exists(tmp_dir_concat); ensure_dir_exists(destination_concatenated_file.parent)
 
-    time_pattern_concat = re.compile(r"(\d+p\d+s)_to_") # Simpler regex for start time for sorting
+    time_pattern_concat = re.compile(r"(\d+p\d+s)_to_")
 
     def get_sort_key_concat(p: Path):
         try:
             match = time_pattern_concat.search(p.stem)
             if match:
-                start_time_str = match.group(1) # The part like "123p456s"
+                start_time_str = match.group(1)
                 return float(start_time_str.replace('p', '.').removesuffix('s'))
-            return 0.0 # Fallback if pattern not found
+            return 0.0
         except: return 0.0
     sorted_audio_paths = sorted(audio_segment_paths, key=get_sort_key_concat)
 
