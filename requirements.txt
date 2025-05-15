@@ -1,0 +1,16 @@
+rich
+ffmpeg-python
+soundfile
+numpy
+torch>=2.7.0
+torchaudio>=2.7.0 # Match torch major.minor typically
+torchvision>=0.22.0
+pyannote.audio>=3.3.2
+resemblyzer
+openai-whisper>=20240930
+demucs>=4.0.1
+matplotlib
+librosa
+speechbrain>=1.0.0
+torchcrepe>=0.0.21
+silero-vad>=5.1.2
