@@ -2,24 +2,24 @@
 
 A tool for identifying, isolating, and transcribing clean solo segments of a target speaker from multi-speaker audio recordings. Processes audio to extract only non-overlapped speech of a specific person using modern AI techniques.
 
+## Features
 
-Features
+- **Speaker Diarization**: Identifies who is speaking when using PyAnnote
+- **Overlap Detection**: Finds and removes segments with multiple speakers  
+- **Target Identification**: Matches speakers to a reference sample
+- **Vocal Separation**: Optional Demucs preprocessing to isolate vocals
+- **Speaker Verification**: Multi-model approach (SpeechBrain & Resemblyzer)
+- **Transcription**: OpenAI Whisper for accurate transcription
+- **Visualization**: Spectrograms and diarization plots
 
-Speaker Diarization: Identifies who is speaking when using PyAnnote
-Overlap Detection: Finds and removes segments with multiple speakers
-Target Identification: Matches speakers to a reference sample
-Vocal Separation: Optional Demucs preprocessing to isolate vocals
-Speaker Verification: Multi-model approach (SpeechBrain & Resemblyzer)
-Transcription: OpenAI Whisper for accurate transcription
-Visualization: Spectrograms and diarization plots
+## Tech Stack
 
-Tech Stack
+- **Audio Processing**: PyAnnote Audio, Resemblyzer, Demucs
+- **Speech Models**: SpeechBrain, Silero-VAD, OpenAI Whisper
+- **Dependencies**: PyTorch 2.7.0+, torchaudio, torchvision, librosa
+- **Output**: Verified WAV segments, transcripts (CSV/TXT), spectrograms
 
-Audio Processing: PyAnnote Audio, Resemblyzer, Demucs
-Speech Models: SpeechBrain, Silero-VAD, OpenAI Whisper
-Dependencies: PyTorch 2.7.0+, torchaudio, torchvision, librosa
-Output: Verified WAV segments, transcripts (CSV/TXT), spectrograms
-
+## Installation
 
 
 
