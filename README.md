@@ -25,7 +25,7 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 
 Install all required dependencies:        pip install -r requirements.txt
 
-Usage:
+## Usage:
 
 python run_extractor.py `
     --input-audio "path/to/input_audio.wav" `
