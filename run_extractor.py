@@ -1,10 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
 run_extractor.py - General Purpose Voice Extractor
-Author: Your Name/Organization
-Version: 1.2.0 (Split segments around overlap, updated deps)
 
 This script processes an input audio file to identify, isolate (solo segments only),
 and transcribe segments of a specified target speaker.
