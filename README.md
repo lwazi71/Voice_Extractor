@@ -25,7 +25,7 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 
 Install all required dependencies:        pip install -r requirements.txt
 
-## Usage:
+## Dry Run (first one minute for testing):
 
 python run_extractor.py `
     --input-audio "path/to/input_audio.wav" `
@@ -35,4 +35,15 @@ python run_extractor.py `
     --token "hf_YourHuggingFaceToken" `
     --osd-model "pyannote/overlapped-speech-detection" `
     --dry-run `
+    --debug
+
+## Full Run (processes the entire audio file):
+
+python run_extractor.py `
+    --input-audio "path/to/input_audio.wav" `
+    --reference-audio "path/to/target_sample.wav" `
+    --target-name "TargetName" `
+    --output-base-dir "path/to/output_directory" `
+    --token "hf_YourHuggingFaceToken" `
+    --osd-model "pyannote/overlapped-speech-detection" `
     --debug
