@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
 common.py
 Shared configurations, constants, utilities, logging, device management,
