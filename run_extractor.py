@@ -17,7 +17,7 @@ Key Features:
 - Vocal separation using Demucs (optional pre-processing).
 - Multi-model speaker verification (SpeechBrain & Resemblyzer) for refined solo segments.
 - Voice activity detection (VAD) using Silero-VAD for refined solo segments.
-- Transcription using OpenAI Whisper for refined solo segments.
+- Transcription using OpenAI Whisper for refined solo segments (verified and rejected).
 - Detailed logging and visualization of processing stages.
 
 Example Usage:
@@ -89,13 +89,20 @@ def main(args):
     run_output_dir_name = f"{safe_filename(target_name_str)}_{input_audio_p.stem}_SOLO_Split"
     output_dir = Path(args.output_base_dir) / run_output_dir_name
     run_tmp_dir = output_dir / "__tmp_processing"
-    segments_base_output_dir = output_dir / "target_segments_solo"
-    transcripts_output_dir = output_dir / "transcripts_solo"
+    
+    segments_base_output_dir = output_dir / "target_segments_solo" # Base for verified and rejected
+    # Verified segments will go into: segments_base_output_dir / target_name_solo_verified
+    # Rejected segments will go into: segments_base_output_dir / target_name_solo_rejected_for_review
+    
+    transcripts_verified_output_dir = output_dir / "transcripts_solo_verified"
+    transcripts_rejected_output_dir = output_dir / "transcripts_solo_rejected_for_review" # New dir for rejected transcripts
+    
     concatenated_output_dir = output_dir / "concatenated_audio_solo"
     visualizations_output_dir = output_dir / "visualizations"
 
-    for dir_path in [output_dir, run_tmp_dir, segments_base_output_dir,
-                     transcripts_output_dir, concatenated_output_dir, visualizations_output_dir]:
+    for dir_path in [output_dir, run_tmp_dir, segments_base_output_dir, # segments_base_output_dir will contain subdirs
+                     transcripts_verified_output_dir, transcripts_rejected_output_dir, # Added rejected transcripts dir
+                     concatenated_output_dir, visualizations_output_dir]:
         ensure_dir_exists(dir_path)
 
     log.info(f"Processing input: [bold cyan]{input_audio_p.name}[/]")
@@ -107,6 +114,7 @@ def main(args):
     if args.dry_run: log.warning("[DRY-RUN MODE ENABLED] Processing will be limited.")
     if args.disable_speechbrain: log.info("SpeechBrain verification is disabled by user.")
     if args.skip_demucs: log.info("Demucs vocal separation will be SKIPPED.")
+    if args.skip_rejected_transcripts: log.info("Transcription of REJECTED segments will be SKIPPED.")
 
 
     # --- STAGE 1: Prepare Reference & Initial Spectrogram ---
@@ -116,13 +124,13 @@ def main(args):
     save_detailed_spectrograms(processed_reference_file, visualizations_output_dir, "00_Processed_ReferenceAudio", target_name_str)
 
     # --- STAGE 2: Optional Vocal Separation (Demucs) ---
-    source_for_diarization_osd = input_audio_p # This will be the audio fed to diarization and OSD
-    demucs_vocals_file = None # This will be the audio fed to slicing IF demucs is run
+    source_for_diarization_osd = input_audio_p 
+    demucs_vocals_file = None 
     if not args.skip_demucs:
         log.info("[bold magenta]== STAGE 2: Vocal Separation (Demucs) ==[/]")
         demucs_vocals_file = run_demucs(input_audio_p, run_tmp_dir)
         save_detailed_spectrograms(demucs_vocals_file, visualizations_output_dir, "02a_Demucs_Vocals_Only", target_name_str)
-        source_for_diarization_osd = demucs_vocals_file # Use cleaner vocals for diarization/OSD
+        source_for_diarization_osd = demucs_vocals_file 
         log.info(f"Using Demucs output '{demucs_vocals_file.name}' for subsequent diarization and OSD.")
     else:
         log.info(f"Using original input '{input_audio_p.name}' for diarization and OSD (Demucs skipped).")
@@ -153,12 +161,10 @@ def main(args):
     log.info(f"[bold magenta]== STAGE 5: Identifying Target Speaker ('{target_name_str}') ==[/]")
     identified_target_label = identify_target_speaker(diarization_annotation, source_for_diarization_osd, processed_reference_file, target_name_str)
 
-    # Plot diarization after identifying target, so target can be highlighted, and overlaps shown
     create_diarization_plot(diarization_annotation, identified_target_label, target_name_str,
                             visualizations_output_dir,
                             plot_title_prefix=f"03_Diarization_with_Overlap_{safe_filename(target_name_str)}",
                             overlap_timeline=overlap_timeline)
-    # Also save a spectrogram of the audio that was diarized/OSD'd, showing overlaps
     save_detailed_spectrograms(source_for_diarization_osd, visualizations_output_dir,
                                "04_Source_For_Slicing_with_OverlapMarkings", target_name_str,
                                overlap_timeline=overlap_timeline)
@@ -168,20 +174,18 @@ def main(args):
     log.info(f"[bold magenta]== STAGE 6: Slice & Verify '{target_name_str}' Refined SOLO Segments ==[/]")
     if args.disable_speechbrain:
         log.info("User disabled SpeechBrain, it will not be used for verification even if available.")
-        # To modify the flag in audio_pipeline module:
         import audio_pipeline
         audio_pipeline.HAVE_SPEECHBRAIN = False
 
-    # Slicing source should be the audio we want the final segments from.
-    # If Demucs was run, use its output. Otherwise, use the original input.
     slicing_source_audio = demucs_vocals_file if demucs_vocals_file and demucs_vocals_file.exists() else input_audio_p
     log.info(f"Slicing final segments from: {slicing_source_audio.name}")
 
-    solo_segment_paths = slice_and_verify_target_solo_segments(
+    # slice_and_verify now returns two lists: (verified_paths, rejected_paths)
+    verified_solo_segment_paths, rejected_solo_segment_paths = slice_and_verify_target_solo_segments(
         diarization_annotation, identified_target_label, overlap_timeline,
-        slicing_source_audio, # Audio to cut from
+        slicing_source_audio, 
         processed_reference_file, target_name_str,
-        segments_base_output_dir, # Base for "..._solo_verified"
+        segments_base_output_dir, # Base directory for "target_name_solo_verified" and "target_name_solo_rejected_for_review"
         run_tmp_dir,
         args.verification_threshold,
         args.min_duration, args.merge_gap,
@@ -189,45 +193,52 @@ def main(args):
         output_channels=1
     )
 
-    # --- STAGE 7: Transcribe SOLO Segments ---
-    log.info(f"[bold magenta]== STAGE 7: Transcribing SOLO Segments ('{target_name_str}') ==[/]")
-    if solo_segment_paths:
-        transcribe_segments(solo_segment_paths, transcripts_output_dir, target_name_str, "solo_verified", args.whisper_model, args.language)
+    # --- STAGE 7: Transcribe Segments ---
+    # Transcribe VERIFIED Segments
+    log.info(f"[bold magenta]== STAGE 7a: Transcribing VERIFIED SOLO Segments ('{target_name_str}') ==[/]")
+    if verified_solo_segment_paths:
+        transcribe_segments(verified_solo_segment_paths, transcripts_verified_output_dir, target_name_str, "solo_verified", args.whisper_model, args.language)
     else:
-        log.info(f"No refined solo segments of '{target_name_str}' to transcribe.")
+        log.info(f"No verified solo segments of '{target_name_str}' to transcribe.")
+
+    # Transcribe REJECTED Segments (optional)
+    if not args.skip_rejected_transcripts:
+        log.info(f"[bold magenta]== STAGE 7b: Transcribing REJECTED SOLO Segments ('{target_name_str}') ==[/]")
+        if rejected_solo_segment_paths:
+            transcribe_segments(rejected_solo_segment_paths, transcripts_rejected_output_dir, target_name_str, "solo_rejected_for_review", args.whisper_model, args.language)
+        else:
+            log.info(f"No rejected solo segments of '{target_name_str}' to transcribe for review.")
+    else:
+        log.info(f"Skipping transcription of rejected segments for '{target_name_str}'.")
 
 
-    # --- STAGE 8: Concatenate SOLO Segments ---
-    log.info(f"[bold magenta]== STAGE 8: Concatenating SOLO Segments ('{target_name_str}') ==[/]")
+    # --- STAGE 8: Concatenate VERIFIED SOLO Segments ---
+    log.info(f"[bold magenta]== STAGE 8: Concatenating VERIFIED SOLO Segments ('{target_name_str}') ==[/]")
     concat_sr = int(args.output_sr)
     concatenated_solo_file = None
 
-    if solo_segment_paths:
+    if verified_solo_segment_paths:
         concatenated_solo_file_path = concatenated_output_dir / f"{safe_filename(target_name_str)}_solo_split_concatenated.wav"
-        concat_solo_success = concatenate_segments(solo_segment_paths, concatenated_solo_file_path, run_tmp_dir,
+        concat_solo_success = concatenate_segments(verified_solo_segment_paths, concatenated_solo_file_path, run_tmp_dir,
                                                    silence_duration=args.concat_silence, output_sr_concat=concat_sr)
         if concat_solo_success:
             concatenated_solo_file = concatenated_solo_file_path
             save_detailed_spectrograms(concatenated_solo_file, visualizations_output_dir,
                                        "05_Concatenated_Target_SOLO_Split", target_name_str)
     else:
-        log.info(f"No refined solo segments of '{target_name_str}' to concatenate.")
+        log.info(f"No verified solo segments of '{target_name_str}' to concatenate.")
 
 
     # --- STAGE 9: Final Comparison Spectrograms ---
     log.info("[bold magenta]== STAGE 9: Generating Final Comparison Spectrograms ==[/]")
     comparison_files_list = [(input_audio_p, "Original Input")]
-    # Key for overlap_timeline_for_plots should be the *resolved absolute path* of the audio file
-    # that the overlap_timeline corresponds to (i.e., source_for_diarization_osd)
     overlap_timeline_for_plots = {str(source_for_diarization_osd.resolve()): overlap_timeline}
 
     if demucs_vocals_file and demucs_vocals_file.exists():
         comparison_files_list.append((demucs_vocals_file, "Demucs Vocals Only"))
-        # If OSD was on demucs_vocals_file, overlap_timeline_for_plots already has it keyed correctly above.
 
     if concatenated_solo_file and concatenated_solo_file.exists():
-        comparison_files_list.append((concatenated_solo_file, f"{target_name_str} Segments (SOLO Split, Concatenated)"))
-        # Concatenated solo file has no overlaps, so no timeline for it here.
+        comparison_files_list.append((concatenated_solo_file, f"{target_name_str} Segments (SOLO Verified, Concatenated)"))
 
     create_comparison_spectrograms(comparison_files_list, visualizations_output_dir, target_name_str,
                                    main_prefix="06_Audio_Processing_Stages_Overview",
@@ -249,8 +260,12 @@ def main(args):
     log.info(f"Total processing time: {format_duration(total_duration_seconds)}")
     log.info(f"All output files are located in: [bold cyan]{output_dir}[/]")
     log.info(f"  - Verified SOLO Segments: {segments_base_output_dir / (safe_filename(target_name_str) + '_solo_verified')}")
-    log.info(f"  - Transcripts (SOLO): {transcripts_output_dir}")
-    log.info(f"  - Concatenated Audio (SOLO): {concatenated_output_dir}")
+    if (segments_base_output_dir / (safe_filename(target_name_str) + '_solo_rejected_for_review')).exists():
+        log.info(f"  - Rejected SOLO Segments (for review): {segments_base_output_dir / (safe_filename(target_name_str) + '_solo_rejected_for_review')}")
+    log.info(f"  - Transcripts (SOLO Verified): {transcripts_verified_output_dir}")
+    if not args.skip_rejected_transcripts and transcripts_rejected_output_dir.exists() and any(transcripts_rejected_output_dir.iterdir()):
+        log.info(f"  - Transcripts (SOLO Rejected, for review): {transcripts_rejected_output_dir}")
+    log.info(f"  - Concatenated Audio (SOLO Verified): {concatenated_output_dir}")
     log.info(f"  - Visualizations: {visualizations_output_dir}")
 
 
@@ -276,16 +291,18 @@ if __name__ == "__main__":
 
     proc_group = parser.add_argument_group('Processing Control Arguments')
     proc_group.add_argument("--diar-model", type=str, default="pyannote/speaker-diarization-3.1",
-                            help="PyAnnote speaker diarization model from Hugging Face (e.g., 'pyannote/speaker-diarization-3.1', 'pyannote/speaker-diarization@2.1').")
+                            help="PyAnnote speaker diarization model from Hugging Face.")
     proc_group.add_argument("--diar-hyperparams", type=str, default="{}",
-                            help="JSON string of hyperparameters for the PyAnnote diarization pipeline (e.g., '{\"min_duration_on\": 0.05, \"min_duration_off\": 0.05}'). Applied to the diarization step only.")
+                            help="JSON string of hyperparameters for the PyAnnote diarization pipeline.")
     proc_group.add_argument("--osd-model", type=str, default="pyannote/segmentation-3.0",
-                            help="PyAnnote model for Overlapped Speech Detection (e.g., 'pyannote/overlapped-speech-detection', 'pyannote/segmentation-3.0', 'pyannote/segmentation'). segmentation-3.0 is a valid segmentation model.")
+                            help="PyAnnote model for Overlapped Speech Detection.")
     proc_group.add_argument("--whisper-model", type=str, default="base.en", help="Whisper model name for transcription.")
     proc_group.add_argument("--language", type=str, default="en", help="Language code for Whisper transcription ('auto' for detection).")
     proc_group.add_argument("--disable-speechbrain", action="store_true", help="Disable SpeechBrain for speaker verification.")
     proc_group.add_argument("--skip-demucs", action="store_true", help="Skip the Demucs vocal separation stage.")
     proc_group.add_argument("--concat-silence", type=float, default=0.5, help="Duration of silence (seconds) between concatenated SOLO segments.")
+    proc_group.add_argument("--skip-rejected-transcripts", action="store_true", help="Skip transcription of rejected segments.")
+
 
     tune_group = parser.add_argument_group('Fine-tuning Parameters for SOLO Segments')
     tune_group.add_argument("--min-duration", type=float, default=DEFAULT_MIN_SEGMENT_SEC,
@@ -301,7 +318,7 @@ if __name__ == "__main__":
     debug_group.add_argument("--keep-temp-files", action="store_true", help="Keep temporary processing directory.")
 
     parsed_args = parser.parse_args()
-    set_args_for_debug(parsed_args) # Make args available for plotting error tracebacks in common.py
+    set_args_for_debug(parsed_args) 
 
     if parsed_args.debug:
         log.setLevel(logging.DEBUG)
@@ -313,7 +330,6 @@ if __name__ == "__main__":
             log.debug(f"CUDA device count: {torch.cuda.device_count()}")
             for i in range(torch.cuda.device_count()):
                 log.debug(f"  Device {i}: {torch.cuda.get_device_name(i)}")
-                # Check memory only if CUDA is primary device to avoid errors on CPU-only systems with torch.cuda calls
                 if DEVICE.type == 'cuda':
                     try:
                         log.debug(f"    Memory (Allocated/Reserved): {torch.cuda.memory_allocated(i)/1e9:.2f}GB / {torch.cuda.memory_reserved(i)/1e9:.2f}GB")
@@ -322,7 +338,7 @@ if __name__ == "__main__":
 
 
     if not parsed_args.token:
-        parsed_args.token = get_huggingface_token() # Ensure token is fetched if not provided
+        parsed_args.token = get_huggingface_token() 
 
     try:
         main(parsed_args)
@@ -348,7 +364,7 @@ if __name__ == "__main__":
         log.error(f"[bold red][RUNTIME ERROR] {e}[/]")
         if parsed_args.debug: log.exception("Traceback for RuntimeError:")
         sys.exit(1)
-    except SystemExit as e: # To allow sys.exit() to work as intended
+    except SystemExit as e: 
         sys.exit(e.code if e.code is not None else 1)
     except Exception as e:
         log.error(f"[bold red][FATAL SCRIPT ERROR] An unexpected error occurred: {e}[/]")
