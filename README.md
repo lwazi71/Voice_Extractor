@@ -36,7 +36,7 @@ https://huggingface.co/pyannote/overlapped-speech-detection
 https://huggingface.co/pyannote/segmentation-3.0
 https://huggingface.co/pyannote/segmentation
 
-There are others - need to add the rest of the gated repo links.
+There are others - need to add the rest of the gated repo links. The error logs will let you know in the meantime.
 
 ## Dry Run (first one minute for testing):
 
