@@ -2,6 +2,10 @@
 
 A tool for identifying, isolating, and transcribing clean solo segments of a target speaker from multi-speaker audio recordings. Processes audio to extract only non-overlapped speech of a specific person using modern AI techniques.
 
+## Experimental Google Colab version (needs testing):
+
+colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb
+
 ## Features
 
 - **Speaker Diarization**: Identifies who is speaking when using PyAnnote
