@@ -34,13 +34,10 @@ NVIDIA GPU with 13GB+ VRAM
 Install all required dependencies:        pip install -r requirements.txt
 
 Request access to the following gated repos:
-
-https://huggingface.co/pyannote/speaker-diarization-3.1
-https://huggingface.co/pyannote/overlapped-speech-detection
-https://huggingface.co/pyannote/segmentation-3.0
-https://huggingface.co/pyannote/segmentation
-
-There are others - need to add the rest of the gated repo links. The error logs will let you know in the meantime.
+- https://huggingface.co/pyannote/speaker-diarization-3.1
+- https://huggingface.co/pyannote/overlapped-speech-detection
+- https://huggingface.co/pyannote/segmentation-3.0
+- https://huggingface.co/pyannote/segmentation
 
 ## Dry Run (first one minute for testing):
 
