@@ -41,51 +41,26 @@ Request access to the following gated repos:
 - https://huggingface.co/pyannote/segmentation-3.0
 - https://huggingface.co/pyannote/segmentation
 
-## Dry Run (first one minute for testing):
+# Base Command (required arguments only)
+python run_extractor.py \
+    --input-audio "path/to/input_audio.wav" \
+    --reference-audio "path/to/target_sample.wav" \
+    --target-name "TargetName" \
+    --token "hf_YourHuggingFaceToken"
 
-python run_extractor.py `
-    --input-audio "path/to/input_audio.wav" `
-    --reference-audio "path/to/target_sample.wav" `
-    --target-name "TargetName" `
-    --output-base-dir "path/to/output_directory" `
-    --token "hf_YourHuggingFaceToken" `
-    --osd-model "pyannote/overlapped-speech-detection" `
-    --dry-run `
-    --debug
-
-## Full Run (processes the entire audio file):
-
-python run_extractor.py `
-    --input-audio "path/to/input_audio.wav" `
-    --reference-audio "path/to/target_sample.wav" `
-    --target-name "TargetName" `
-    --output-base-dir "path/to/output_directory" `
-    --token "hf_YourHuggingFaceToken" `
-    --osd-model "pyannote/overlapped-speech-detection" `
-    --debug
-
-## Full Run (24k Hz sample rate for Sesame CSM):
-
-python run_extractor.py `
-    --input-audio "path/to/input_audio.wav" `
-    --reference-audio "path/to/target_sample.wav" `
-    --target-name "TargetName" `
-    --output-base-dir "path/to/output_directory" `
-    --token "hf_YourHuggingFaceToken" `
-    --osd-model "pyannote/overlapped-speech-detection" `
-    --output-sr 24000 `
-    --whisper-model "base.en" `
-    --language "en" `
-    --debug
-
-
-## Optional Arguments:
-
---skip-demucs: If your full_audio.wav is already relatively clean or primarily vocals, you might skip Demucs to save time.
---disable-speechbrain: If you want to rely solely on Resemblyzer for verification (might be faster, potentially less accurate).
---concat-silence 0.25: To change the silence duration between concatenated segments (default is 0.5s).
---min-duration X: To change the minimum duration for a solo segment (default 1.0s).
---merge-gap Y: To change the maximum gap for merging segments (default 0.25s).
---verification-threshold Z: To adjust the speaker verification strictness (default 0.69).
---skip-rejected-transcripts: If you decide you don't need transcripts for the rejected segments to save time.
---keep-temp-files: If you want to inspect the __tmp_processing directory after the run.
+# Optional Arguments (add as needed)
+    --output-base-dir "path/to/output_directory"  # Output directory (default: ./output_runs)
+    --output-sr 44100                         # Output sample rate in Hz (default: 44100)
+    --osd-model "pyannote/overlapped-speech-detection"  # Overlap detection model
+    --whisper-model "base.en"                 # Transcription model (default: base.en)
+    --language "en"                           # Language for transcription (default: en)
+    --min-duration 1.0                        # Minimum segment duration in seconds
+    --merge-gap 0.25                          # Maximum gap between segments to merge
+    --verification-threshold 0.69             # Speaker verification strictness (0-1)
+    --concat-silence 0.5                      # Silence between segments in output
+    --dry-run                                 # Process only first minute (testing)
+    --debug                                   # Enable verbose logging
+    --skip-demucs                             # Skip vocal separation
+    --disable-speechbrain                     # Use only Resemblyzer verification
+    --skip-rejected-transcripts               # Don't transcribe rejected segments
+    --keep-temp-files                         # Keep temporary processing files
