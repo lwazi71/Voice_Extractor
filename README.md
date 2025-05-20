@@ -52,7 +52,7 @@ python run_extractor.py \
     --output-base-dir "path/to/output_directory"  # Output directory (default: ./output_runs)
     --output-sr 44100                         # Output sample rate in Hz (default: 44100)
     --osd-model "pyannote/overlapped-speech-detection"  # Overlap detection model
-    --whisper-model "base.en"                 # Transcription model (default: base.en)
+    --whisper-model "large-v3"                # Transcription model (default: large-v3)
     --language "en"                           # Language for transcription (default: en)
     --min-duration 1.0                        # Minimum segment duration in seconds
     --merge-gap 0.25                          # Maximum gap between segments to merge
