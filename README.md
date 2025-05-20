@@ -4,8 +4,8 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 
 ## Experimental Google Colab version (needs testing):
 
-colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb
-
+[colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb
+](https://colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb)
 ## Features
 
 - **Speaker Diarization**: Identifies who is speaking when using PyAnnote
