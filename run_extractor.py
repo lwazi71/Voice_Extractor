@@ -289,7 +289,7 @@ if __name__ == "__main__":
                             help="PyAnnote speaker diarization model from Hugging Face.")
     proc_group.add_argument("--diar-hyperparams", type=str, default="{}",
                             help="JSON string of hyperparameters for the PyAnnote diarization pipeline.")
-    proc_group.add_argument("--osd-model", type=str, default="pyannote/segmentation-3.0",
+    proc_group.add_argument("--osd-model", type=str, default="pyannote/overlapped-speech-detection",
                             help="PyAnnote model for Overlapped Speech Detection.")
     proc_group.add_argument("--whisper-model", type=str, default="base.en", help="Whisper model name for transcription.")
     proc_group.add_argument("--language", type=str, default="en", help="Language code for Whisper transcription ('auto' for detection).")
