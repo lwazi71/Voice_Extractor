@@ -72,3 +72,5 @@ python run_extractor.py \
 If you encounter any problems or have suggestions for improvements:
 - Open an issue on GitHub
 - Email: reiscook@gmail.com
+- This program contains zero telemetry - your feedback helps make it better for everyone
+
