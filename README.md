@@ -33,6 +33,8 @@ NVIDIA GPU with 13GB+ VRAM
 
 Install all required dependencies:        pip install -r requirements.txt
 
+You'll need a Hugging Face access token which you can create at: https://huggingface.co/settings/tokens
+
 Request access to the following gated repos:
 - https://huggingface.co/pyannote/speaker-diarization-3.1
 - https://huggingface.co/pyannote/overlapped-speech-detection
