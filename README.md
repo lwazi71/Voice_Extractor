@@ -7,7 +7,6 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 [colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb
 ](https://colab.research.google.com/github/ReisCook/Voice_Extractor_Colab/blob/main/Voice_Extractor_Colab.ipynb)
 
-Offline Version: https://github.com/ReisCook/Voice_Extractor_Jupyter
 
 ## Features
 
