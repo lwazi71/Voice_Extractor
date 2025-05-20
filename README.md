@@ -67,3 +67,9 @@ python run_extractor.py \
     --disable-speechbrain                     # Use only Resemblyzer verification
     --skip-rejected-transcripts               # Don't transcribe rejected segments
     --keep-temp-files                         # Keep temporary processing files
+
+
+# Issues & Bug Reports
+If you encounter any problems or have suggestions for improvements:
+- Open an issue on GitHub
+- Email: reiscook@gmail.com
