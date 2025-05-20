@@ -622,7 +622,7 @@ def slice_and_verify_target_solo_segments(
 
 def transcribe_segments(
     segment_paths: list[Path], output_transcripts_dir: Path, target_name: str,
-    segment_type_tag: str, whisper_model_name: str = "base.en", language: str = "en"
+    segment_type_tag: str, whisper_model_name: str = "large-v3", language: str = "en"
 ):
     if not segment_paths: log.info(f"No '{segment_type_tag}' segments for '{target_name}' to transcribe."); return
     log.info(f"Transcribing {len(segment_paths)} '{segment_type_tag}' segments for '{target_name}' using Whisper model '{whisper_model_name}'...")
