@@ -9,25 +9,22 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 
 
 ## Features
-
 - **Speaker Diarization**: Identifies who is speaking when using PyAnnote
 - **Overlap Detection**: Finds and removes segments with multiple speakers  
-- **Target Identification**: Matches speakers to a reference sample
-- **Vocal Separation**: Optional Demucs preprocessing to isolate vocals
-- **Speaker Verification**: Multi-model approach (SpeechBrain & Resemblyzer)
-- **Transcription**: OpenAI Whisper for accurate transcription
-- **Visualization**: Spectrograms and diarization plots
+- **Target Identification**: Matches speakers to a reference sample using WeSpeaker Deep r-vector
+- **Vocal Separation**: Optional Bandit-v2 cinematic audio source separation to isolate speech from music/effects
+- **Speaker Verification**: Multi-stage verification using WeSpeaker and SpeechBrain models
+- **Transcription**: OpenAI Whisper for accurate speech-to-text
+- **Visualization**: Spectrograms, diarization plots, and verification score charts
 
 ## Tech Stack
-
-- **Audio Processing**: PyAnnote Audio, Resemblyzer, Demucs
-- **Speech Models**: SpeechBrain, Silero-VAD, OpenAI Whisper
-- **Dependencies**: PyTorch 2.7.0+, torchaudio, torchvision, librosa
-- **Output**: Verified WAV segments, transcripts (CSV/TXT), spectrograms
+- **AI Models**: Bandit-v2 (vocal separation), PyAnnote (diarization/overlap detection), WeSpeaker (speaker identification), SpeechBrain ECAPA-TDNN (verification), Silero-VAD (voice activity), OpenAI Whisper (transcription)
+- **Libraries & Frameworks**: PyTorch, torchaudio, torchvision, librosa, ray, asteroid, ffmpeg-python
+- **Output**: High-quality verified WAV segments (44.1kHz), transcripts (CSV/TXT), spectrograms
 
 ## Min Specs:
 
-NVIDIA GPU with 13GB+ VRAM
+NVIDIA GPU with 16GB VRAM
 
 ## Installation
 
@@ -50,20 +47,25 @@ python run_extractor.py \
     --target-name "TargetName" \
     --token "hf_YourHuggingFaceToken"
 
-# Optional Arguments (add as needed)
-    --output-base-dir "path/to/output_directory"  # Output directory (default: ./output_runs)
+## Optional Arguments (add as needed)
+    --output-base-dir "path/to/output"        # Output directory (default: ./output_runs)
     --output-sr 44100                         # Output sample rate in Hz (default: 44100)
+    --bandit-repo-path "repos/bandit-v2"     # Path to Bandit-v2 repository
+    --bandit-model-path "models/checkpoint.ckpt"  # Path to Bandit checkpoint file
+    --wespeaker-rvector-model "english"       # WeSpeaker model for speaker ID (english/chinese)
+    --wespeaker-gemini-model "english"        # WeSpeaker model for verification
     --osd-model "pyannote/overlapped-speech-detection"  # Overlap detection model
     --whisper-model "large-v3"                # Transcription model (default: large-v3)
     --language "en"                           # Language for transcription (default: en)
     --min-duration 1.0                        # Minimum segment duration in seconds
     --merge-gap 0.25                          # Maximum gap between segments to merge
-    --verification-threshold 0.69             # Speaker verification strictness (0-1)
-    --concat-silence 0.5                      # Silence between segments in output
+    --verification-threshold 0.7              # Speaker verification strictness (0-1)
+    --concat-silence 0.25                     # Silence between segments in output
+    --preload-whisper                         # Pre-load Whisper model at startup
     --dry-run                                 # Process only first minute (testing)
     --debug                                   # Enable verbose logging
-    --skip-demucs                             # Skip vocal separation
-    --disable-speechbrain                     # Use only Resemblyzer verification
+    --skip-bandit                             # Skip vocal separation stage
+    --disable-speechbrain                     # Disable SpeechBrain verification
     --skip-rejected-transcripts               # Don't transcribe rejected segments
     --keep-temp-files                         # Keep temporary processing files
 
