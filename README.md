@@ -20,7 +20,7 @@ A tool for identifying, isolating, and transcribing clean solo segments of a tar
 ## Tech Stack
 - **AI Models**: Bandit-v2 (vocal separation), PyAnnote (diarization/overlap detection), WeSpeaker (speaker identification), SpeechBrain ECAPA-TDNN (verification), Silero-VAD (voice activity), OpenAI Whisper (transcription)
 - **Libraries & Frameworks**: PyTorch, torchaudio, torchvision, librosa, ray, asteroid, ffmpeg-python
-- **Output**: High-quality verified WAV segments (44.1kHz), transcripts (CSV/TXT), spectrograms
+- **Output**: High-quality verified WAV segments, transcripts (CSV/TXT), spectrograms
 
 ## Min Specs:
 
