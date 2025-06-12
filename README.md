@@ -30,7 +30,13 @@ NVIDIA GPU with 16GB VRAM
 
 
 
-Install all required dependencies:        pip install -r requirements.txt
+Install all required dependencies:        
+
+Python 3.10
+
+FFmpeg
+
+pip install -r requirements.txt
 
 You'll need a Hugging Face access token which you can create at: https://huggingface.co/settings/tokens
 
