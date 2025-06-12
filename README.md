@@ -1,6 +1,3 @@
-Here’s your cleaned version of the README.md for Voice_Extractor, no weird text — fully polished, ready to paste:
-
-⸻
 
 Voice_Extractor
 
